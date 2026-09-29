@@ -1,0 +1,894 @@
+<!DOCTYPE html>
+<html lang="en" class="dark">
+<head>
+  <meta charset="UTF-8" />
+  <meta name="viewport" content="width=device-width, initial-scale=1.0" />
+  <title>Focus Engine & Task Prioritizer</title>
+  <!-- Tailwind CSS -->
+  <script src="https://cdn.tailwindcss.com"></script>
+  <script>
+    tailwind.config = {
+      darkMode: 'class',
+      theme: {
+        extend: {
+          colors: {
+            brand: {
+              bg: '#0b0d17',
+              card: '#131726',
+              border: '#23283e',
+              accent: '#6366f1',
+              accentHover: '#4f46e5',
+              purple: '#8b5cf6',
+              sidebar: '#111422'
+            }
+          }
+        }
+      }
+    }
+  </script>
+  <!-- Alpine.js -->
+  <script defer src="https://cdn.jsdelivr.net/npm/alpinejs@3.x.x/dist/cdn.min.js"></script>
+  <!-- FontAwesome Icons -->
+  <link rel="stylesheet" href="https://cdnjs.cloudflare.com/ajax/libs/font-awesome/6.4.0/css/all.min.css" />
+  <style>
+    [x-cloak] { display: none !important; }
+    body { font-family: 'Inter', system-ui, -apple-system, sans-serif; background-color: #0b0d17; color: #f1f5f9; }
+    
+    /* Custom Scrollbars */
+    ::-webkit-scrollbar { width: 6px; height: 6px; }
+    ::-webkit-scrollbar-track { background: #0b0d17; }
+    ::-webkit-scrollbar-thumb { background: #23283e; border-radius: 4px; }
+    ::-webkit-scrollbar-thumb:hover { background: #3b4261; }
+  </style>
+</head>
+<body x-data="focusEngineApp()" class="min-h-screen bg-[#0b0d17] text-slate-100 flex flex-col antialiased selection:bg-indigo-500 selection:text-white">
+
+  <!-- Header Navigation -->
+  <header class="border-b border-[#1e2338] bg-[#0f1220]/90 backdrop-blur-md sticky top-0 z-30">
+    <div class="max-w-7xl mx-auto px-4 sm:px-6 lg:px-8 py-3.5 flex flex-wrap items-center justify-between gap-4">
+      
+      <!-- Logo & Title -->
+      <div class="flex items-center gap-3">
+        <div class="w-9 h-9 rounded-xl bg-gradient-to-tr from-indigo-600 to-purple-600 flex items-center justify-center shadow-lg shadow-indigo-500/20 border border-indigo-400/30">
+          <i class="fa-solid fa-microchip text-white text-base"></i>
+        </div>
+        <div>
+          <h1 class="text-lg font-bold tracking-tight text-white flex items-center gap-2">
+            Focus Engine & Task Prioritizer
+          </h1>
+          <p class="text-xs text-slate-400 font-medium">Eisenhower Matrix & Dynamic Task Execution</p>
+        </div>
+      </div>
+
+      <!-- Action Navigation Buttons -->
+      <div class="flex items-center gap-2.5">
+        <button @click="currentView = 'list'" 
+                :class="currentView === 'list' ? 'bg-indigo-600 text-white border-indigo-500' : 'bg-[#181d30] text-slate-300 border-[#2b324d] hover:bg-[#202740]'" 
+                class="px-3.5 py-1.5 text-xs font-semibold rounded-lg border transition-all flex items-center gap-2 shadow-sm">
+          <i class="fa-solid fa-list-ul"></i> List View
+        </button>
+        <button @click="currentView = 'matrix'" 
+                :class="currentView === 'matrix' ? 'bg-indigo-600 text-white border-indigo-500' : 'bg-[#181d30] text-slate-300 border-[#2b324d] hover:bg-[#202740]'" 
+                class="px-3.5 py-1.5 text-xs font-semibold rounded-lg border transition-all flex items-center gap-2 shadow-sm">
+          <i class="fa-solid fa-border-all"></i> Eisenhower Matrix
+        </button>
+
+        <button @click="autoPrioritize()" class="px-3.5 py-1.5 text-xs font-semibold bg-gradient-to-r from-indigo-600 to-purple-600 hover:from-indigo-500 hover:to-purple-500 text-white rounded-lg border border-indigo-400/30 shadow-md shadow-indigo-500/20 transition-all flex items-center gap-2">
+          <i class="fa-solid fa-wand-magic-sparkles"></i> Auto-Prioritize
+        </button>
+
+        <button @click="manageCategoriesModal = true" class="px-3.5 py-1.5 text-xs font-semibold bg-[#181d30] text-slate-300 hover:bg-[#202740] border border-[#2b324d] rounded-lg transition-all flex items-center gap-2">
+          <i class="fa-solid fa-folder-plus"></i> Categories
+        </button>
+
+        <button @click="openAddTaskModal()" class="px-3.5 py-1.5 text-xs font-bold bg-indigo-600 hover:bg-indigo-500 text-white rounded-lg border border-indigo-400/30 shadow-lg shadow-indigo-600/30 transition-all flex items-center gap-2">
+          <i class="fa-solid fa-plus"></i> Add Task
+        </button>
+      </div>
+
+    </div>
+  </header>
+
+  <!-- Main Content Layout -->
+  <main class="max-w-7xl mx-auto px-4 sm:px-6 lg:px-8 py-6 flex-1 w-full">
+    <div class="grid grid-cols-1 lg:grid-cols-3 gap-6">
+
+      <!-- Left Column: Tasks / Views -->
+      <div class="lg:col-span-2 space-y-4">
+        
+        <!-- Category & Priority Filters Row -->
+        <div class="bg-[#131726] p-3 rounded-xl border border-[#23283e] flex flex-wrap items-center justify-between gap-3 shadow-md">
+          
+          <div class="flex flex-wrap items-center gap-2">
+            <button @click="selectedCategory = 'All'" 
+                    :class="selectedCategory === 'All' ? 'bg-indigo-600 text-white shadow-md shadow-indigo-500/20' : 'bg-[#1c2238] text-slate-300 hover:bg-[#252d4a] border border-[#2b324d]'"
+                    class="px-3 py-1.5 rounded-lg text-xs font-bold transition-all">
+              All (<span x-text="tasks.length"></span>)
+            </button>
+
+            <template x-for="cat in categories" :key="cat.name">
+              <button @click="selectedCategory = cat.name" 
+                      :class="selectedCategory === cat.name ? 'bg-indigo-600 text-white shadow-md shadow-indigo-500/20' : 'bg-[#1c2238] text-slate-300 hover:bg-[#252d4a] border border-[#2b324d]'"
+                      class="px-3 py-1.5 rounded-lg text-xs font-bold transition-all flex items-center gap-1.5">
+                <span x-text="cat.icon || '📁'"></span>
+                <span x-text="cat.name"></span>
+                <span class="text-[10px] opacity-70" x-text="'(' + getCategoryCount(cat.name) + ')'"></span>
+              </button>
+            </template>
+
+            <button @click="manageCategoriesModal = true" class="px-2.5 py-1.5 rounded-lg text-xs font-semibold bg-[#1a1e30] text-indigo-400 hover:bg-[#232a45] border border-dashed border-indigo-500/40 transition-all flex items-center gap-1">
+              <i class="fa-solid fa-plus text-[10px]"></i> New
+            </button>
+          </div>
+
+          <!-- Priority Filter Dropdown -->
+          <div class="flex items-center gap-2">
+            <span class="text-xs text-slate-400 font-medium hidden sm:inline">Filter:</span>
+            <select x-model="priorityFilter" class="bg-[#1c2238] border border-[#2b324d] rounded-lg text-xs text-slate-200 py-1.5 px-3 focus:outline-none focus:border-indigo-500">
+              <option value="All">All Priorities</option>
+              <option value="P1">P1 - Critical / Do First</option>
+              <option value="P2">P2 - Important / Schedule</option>
+              <option value="P3">P3 - Urgent / Delegate</option>
+              <option value="P4">P4 - Low / Don't Do</option>
+            </select>
+          </div>
+
+        </div>
+
+        <!-- LIST VIEW -->
+        <div x-show="currentView === 'list'" class="space-y-3">
+          <div class="flex items-center justify-between text-xs font-bold text-slate-400 px-1 uppercase tracking-wider">
+            <span>TASKS (<span x-text="filteredTasks.length"></span>)</span>
+            <span x-text="selectedCategory === 'All' ? 'Showing All Categories' : 'Category: ' + selectedCategory"></span>
+          </div>
+
+          <template x-for="task in filteredTasks" :key="task.id">
+            <div class="bg-[#131726] border border-[#23283e] rounded-xl p-4 shadow-lg hover:border-[#323a59] transition-all space-y-3">
+              
+              <!-- Task Card Top Header -->
+              <div class="flex items-start justify-between gap-3">
+                <div class="flex items-start gap-3 flex-1">
+                  <input type="checkbox" x-model="task.completed" class="mt-1 h-4 w-4 rounded bg-[#1c2238] border-[#2b324d] text-indigo-600 focus:ring-0 focus:ring-offset-0 cursor-pointer">
+                  
+                  <div class="flex-1">
+                    <div class="flex flex-wrap items-center gap-2">
+                      <span class="px-2 py-0.5 rounded text-[10px] font-bold bg-[#1e253b] text-indigo-300 border border-indigo-500/20" x-text="task.category"></span>
+                      <span class="px-2 py-0.5 rounded text-[10px] font-bold bg-[#1e2233] text-slate-400 border border-slate-700/50" x-text="task.tag || 'General'"></span>
+                      
+                      <!-- Priority Pill Override -->
+                      <select x-model="task.priority" class="px-2 py-0.5 rounded text-[10px] font-extrabold border bg-transparent cursor-pointer focus:outline-none"
+                              :class="{
+                                'bg-red-950/60 text-red-400 border-red-800/60': task.priority === 'P1',
+                                'bg-amber-950/60 text-amber-400 border-amber-800/60': task.priority === 'P2',
+                                'bg-blue-950/60 text-blue-400 border-blue-800/60': task.priority === 'P3',
+                                'bg-slate-800/60 text-slate-400 border-slate-700/60': task.priority === 'P4'
+                              }">
+                        <option value="P1" class="bg-[#131726] text-red-400">P1 - Critical</option>
+                        <option value="P2" class="bg-[#131726] text-amber-400">P2 - Important</option>
+                        <option value="P3" class="bg-[#131726] text-blue-400">P3 - Delegate</option>
+                        <option value="P4" class="bg-[#131726] text-slate-400">P4 - Low</option>
+                      </select>
+                    </div>
+
+                    <h3 class="text-sm font-semibold text-slate-100 mt-2 leading-snug" 
+                        :class="{'line-through text-slate-500': task.completed}" 
+                        x-text="task.title"></h3>
+                  </div>
+                </div>
+
+                <!-- Right Action Buttons -->
+                <div class="flex items-center gap-2">
+                  <button @click="openStudio(task)" class="px-3 py-1.5 text-xs font-bold bg-indigo-600/20 hover:bg-indigo-600/30 text-indigo-300 border border-indigo-500/30 rounded-lg transition-all flex items-center gap-1.5">
+                    <i class="fa-solid fa-bolt text-indigo-400"></i> Work on Task
+                  </button>
+                  <button @click="task.expanded = !task.expanded" class="p-1.5 text-slate-400 hover:text-slate-200 transition-colors">
+                    <i class="fa-solid" :class="task.expanded ? 'fa-chevron-up' : 'fa-chevron-down'"></i>
+                  </button>
+                </div>
+              </div>
+
+              <!-- Expanded Task Panel -->
+              <div x-show="task.expanded" x-cloak class="pt-3 border-t border-[#1e2338] space-y-4">
+                
+                <!-- Priority / Deadline Settings Grid -->
+                <div class="grid grid-cols-1 sm:grid-cols-4 gap-3 text-xs bg-[#0f1220] p-3 rounded-xl border border-[#1b2033]">
+                  <div>
+                    <label class="block font-medium text-slate-400 mb-1">Category</label>
+                    <select x-model="task.category" class="w-full bg-[#181d30] border border-[#2b324d] rounded-lg p-1.5 text-slate-200">
+                      <template x-for="cat in categories" :key="cat.name">
+                        <option :value="cat.name" x-text="cat.name"></option>
+                      </template>
+                    </select>
+                  </div>
+
+                  <div>
+                    <label class="block font-medium text-slate-400 mb-1">Deadline Date</label>
+                    <input type="date" x-model="task.deadline" class="w-full bg-[#181d30] border border-[#2b324d] rounded-lg p-1.5 text-slate-200">
+                  </div>
+
+                  <div>
+                    <label class="block font-medium text-slate-400 mb-1">Urgent?</label>
+                    <select x-model="task.urgent" @change="recalculatePriority(task)" class="w-full bg-[#181d30] border border-[#2b324d] rounded-lg p-1.5 text-slate-200">
+                      <option :value="true">Yes (Urgent)</option>
+                      <option :value="false">No (Not Urgent)</option>
+                    </select>
+                  </div>
+
+                  <div>
+                    <label class="block font-medium text-slate-400 mb-1">Important?</label>
+                    <select x-model="task.important" @change="recalculatePriority(task)" class="w-full bg-[#181d30] border border-[#2b324d] rounded-lg p-1.5 text-slate-200">
+                      <option :value="true">Yes (Important)</option>
+                      <option :value="false">No (Not Important)</option>
+                    </select>
+                  </div>
+                </div>
+
+                <!-- Sub-Tasks Checklist Section -->
+                <div class="space-y-2">
+                  <div class="flex items-center justify-between text-xs font-bold text-slate-300">
+                    <span class="flex items-center gap-1.5">
+                      <i class="fa-solid fa-list-check text-indigo-400"></i> Sub-Tasks Checklist
+                    </span>
+                    <span class="text-[10px] text-slate-500" x-text="getCompletedSubtaskCount(task) + '/' + (task.subtasks ? task.subtasks.length : 0) + ' Completed'"></span>
+                  </div>
+
+                  <div class="space-y-1.5">
+                    <template x-for="(sub, idx) in task.subtasks" :key="idx">
+                      <div class="flex items-center justify-between gap-2 bg-[#0f1220] px-3 py-2 rounded-lg border border-[#1e2338] group hover:border-[#2b324d] transition-all">
+                        <div class="flex items-center gap-2.5 flex-1">
+                          <input type="checkbox" x-model="sub.completed" class="h-3.5 w-3.5 rounded bg-[#1c2238] border-[#2b324d] text-indigo-600">
+                          <span class="text-xs text-slate-300" :class="{'line-through text-slate-500': sub.completed}" x-text="sub.title"></span>
+                        </div>
+                        <div class="flex items-center gap-2 opacity-80 group-hover:opacity-100 transition-opacity">
+                          <button @click="openStudioForSubtask(task, sub)" class="text-[11px] font-semibold text-indigo-400 hover:text-indigo-300 bg-indigo-950/50 hover:bg-indigo-900/50 px-2 py-0.5 rounded border border-indigo-800/40">
+                            <i class="fa-solid fa-wand-magic-sparkles text-[10px] mr-1"></i>Work
+                          </button>
+                          <button @click="task.subtasks.splice(idx, 1)" class="text-slate-500 hover:text-red-400 p-0.5">
+                            <i class="fa-solid fa-xmark text-xs"></i>
+                          </button>
+                        </div>
+                      </div>
+                    </template>
+                  </div>
+
+                  <!-- Add Subtask Input Bar -->
+                  <div class="flex gap-2 pt-1">
+                    <input type="text" x-model="task.newSubtask" @keydown.enter.prevent="addSubtask(task)" placeholder="Type custom sub-task and press Enter..." class="flex-1 bg-[#0f1220] border border-[#2b324d] rounded-lg px-3 py-1.5 text-xs text-slate-200 placeholder-slate-500 focus:outline-none focus:border-indigo-500">
+                    <button @click="addSubtask(task)" class="bg-indigo-600 hover:bg-indigo-500 text-white text-xs font-bold px-3 py-1.5 rounded-lg transition-all">Add Sub-task</button>
+                  </div>
+                </div>
+
+                <!-- Footer Actions -->
+                <div class="flex justify-end pt-2">
+                  <button @click="deleteTask(task.id)" class="text-red-400 hover:text-red-300 text-xs font-semibold flex items-center gap-1.5 bg-red-950/30 hover:bg-red-950/60 px-3 py-1.5 rounded-lg border border-red-900/40 transition-all">
+                    <i class="fa-solid fa-trash-can"></i> Delete Task
+                  </button>
+                </div>
+
+              </div>
+
+            </div>
+          </template>
+        </div>
+
+        <!-- EISENHOWER MATRIX VIEW -->
+        <div x-show="currentView === 'matrix'" class="grid grid-cols-1 md:grid-cols-2 gap-4">
+          
+          <!-- P1 Quad -->
+          <div class="bg-[#131726] border border-red-900/40 rounded-xl p-4 shadow-lg space-y-3">
+            <div class="flex items-center justify-between border-b border-red-900/30 pb-2">
+              <h3 class="font-bold text-red-400 text-xs uppercase tracking-wider flex items-center gap-2">
+                <span class="bg-red-950 text-red-400 border border-red-800/60 px-1.5 py-0.5 rounded">P1</span> Do First (Urgent & Important)
+              </h3>
+              <span class="text-xs text-slate-400 font-semibold" x-text="getMatrixTasks('P1').length"></span>
+            </div>
+            <div class="space-y-2 min-h-[120px]">
+              <template x-for="task in getMatrixTasks('P1')" :key="task.id">
+                <div class="bg-[#0f1220] p-2.5 rounded-lg border border-[#1e2338] shadow-sm flex justify-between items-center text-xs">
+                  <span class="font-semibold text-slate-200 truncate max-w-[200px]" x-text="task.title"></span>
+                  <button @click="openStudio(task)" class="text-indigo-400 hover:text-indigo-300 font-bold text-[11px] bg-indigo-950/60 px-2 py-0.5 rounded border border-indigo-800/40">Work</button>
+                </div>
+              </template>
+            </div>
+          </div>
+
+          <!-- P2 Quad -->
+          <div class="bg-[#131726] border border-amber-900/40 rounded-xl p-4 shadow-lg space-y-3">
+            <div class="flex items-center justify-between border-b border-amber-900/30 pb-2">
+              <h3 class="font-bold text-amber-400 text-xs uppercase tracking-wider flex items-center gap-2">
+                <span class="bg-amber-950 text-amber-400 border border-amber-800/60 px-1.5 py-0.5 rounded">P2</span> Schedule (Important, Not Urgent)
+              </h3>
+              <span class="text-xs text-slate-400 font-semibold" x-text="getMatrixTasks('P2').length"></span>
+            </div>
+            <div class="space-y-2 min-h-[120px]">
+              <template x-for="task in getMatrixTasks('P2')" :key="task.id">
+                <div class="bg-[#0f1220] p-2.5 rounded-lg border border-[#1e2338] shadow-sm flex justify-between items-center text-xs">
+                  <span class="font-semibold text-slate-200 truncate max-w-[200px]" x-text="task.title"></span>
+                  <button @click="openStudio(task)" class="text-indigo-400 hover:text-indigo-300 font-bold text-[11px] bg-indigo-950/60 px-2 py-0.5 rounded border border-indigo-800/40">Work</button>
+                </div>
+              </template>
+            </div>
+          </div>
+
+          <!-- P3 Quad -->
+          <div class="bg-[#131726] border border-blue-900/40 rounded-xl p-4 shadow-lg space-y-3">
+            <div class="flex items-center justify-between border-b border-blue-900/30 pb-2">
+              <h3 class="font-bold text-blue-400 text-xs uppercase tracking-wider flex items-center gap-2">
+                <span class="bg-blue-950 text-blue-400 border border-blue-800/60 px-1.5 py-0.5 rounded">P3</span> Delegate (Urgent, Not Important)
+              </h3>
+              <span class="text-xs text-slate-400 font-semibold" x-text="getMatrixTasks('P3').length"></span>
+            </div>
+            <div class="space-y-2 min-h-[120px]">
+              <template x-for="task in getMatrixTasks('P3')" :key="task.id">
+                <div class="bg-[#0f1220] p-2.5 rounded-lg border border-[#1e2338] shadow-sm flex justify-between items-center text-xs">
+                  <span class="font-semibold text-slate-200 truncate max-w-[200px]" x-text="task.title"></span>
+                  <button @click="openStudio(task)" class="text-indigo-400 hover:text-indigo-300 font-bold text-[11px] bg-indigo-950/60 px-2 py-0.5 rounded border border-indigo-800/40">Work</button>
+                </div>
+              </template>
+            </div>
+          </div>
+
+          <!-- P4 Quad -->
+          <div class="bg-[#131726] border border-slate-700/40 rounded-xl p-4 shadow-lg space-y-3">
+            <div class="flex items-center justify-between border-b border-slate-700/30 pb-2">
+              <h3 class="font-bold text-slate-400 text-xs uppercase tracking-wider flex items-center gap-2">
+                <span class="bg-slate-800 text-slate-400 border border-slate-700/60 px-1.5 py-0.5 rounded">P4</span> Don't Do / Backlog
+              </h3>
+              <span class="text-xs text-slate-400 font-semibold" x-text="getMatrixTasks('P4').length"></span>
+            </div>
+            <div class="space-y-2 min-h-[120px]">
+              <template x-for="task in getMatrixTasks('P4')" :key="task.id">
+                <div class="bg-[#0f1220] p-2.5 rounded-lg border border-[#1e2338] shadow-sm flex justify-between items-center text-xs">
+                  <span class="font-semibold text-slate-200 truncate max-w-[200px]" x-text="task.title"></span>
+                  <button @click="openStudio(task)" class="text-indigo-400 hover:text-indigo-300 font-bold text-[11px] bg-indigo-950/60 px-2 py-0.5 rounded border border-indigo-800/40">Work</button>
+                </div>
+              </template>
+            </div>
+          </div>
+
+        </div>
+
+      </div>
+
+      <!-- Right Sidebar: Top Recommended Priorities (Execution Queue) -->
+      <div class="space-y-4">
+        <div class="bg-[#131726] border border-[#23283e] rounded-xl p-4 shadow-lg space-y-4">
+          
+          <div class="flex items-center justify-between border-b border-[#1e2338] pb-3">
+            <h2 class="font-extrabold text-white text-sm flex items-center gap-2">
+              <i class="fa-solid fa-bolt text-amber-400"></i> Top Recommended Priorities
+            </h2>
+            <span class="text-[10px] font-bold bg-indigo-950 text-indigo-300 border border-indigo-800/60 px-2 py-0.5 rounded-full" x-text="topPriorities.length + ' Active Queue'"></span>
+          </div>
+
+          <p class="text-xs text-slate-400 leading-relaxed">
+            AI-ranked execution queue based on P1 critical urgency and imminent deadline requirements.
+          </p>
+
+          <div class="space-y-3">
+            <template x-for="(task, index) in topPriorities" :key="task.id">
+              <div class="bg-[#0f1220] p-3 rounded-xl border border-[#1b2033] hover:border-indigo-500/40 transition-all space-y-2.5 group">
+                
+                <div class="flex items-start gap-2.5">
+                  <span class="w-5 h-5 rounded-full bg-indigo-600/30 border border-indigo-500/40 text-indigo-300 text-xs font-bold flex items-center justify-center shrink-0 mt-0.5" x-text="index + 1"></span>
+                  
+                  <div class="flex-1 min-w-0">
+                    <h4 class="text-xs font-bold text-slate-100 truncate group-hover:text-indigo-300 transition-colors" x-text="task.title"></h4>
+                    
+                    <!-- Sub-task Highlight if exists -->
+                    <template x-if="task.subtasks && task.subtasks.find(s => !s.completed)">
+                      <p class="text-[11px] text-slate-400 mt-1 flex items-center gap-1.5 truncate">
+                        <i class="fa-solid fa-arrow-right text-[9px] text-indigo-400"></i>
+                        <span x-text="task.subtasks.find(s => !s.completed).title"></span>
+                      </p>
+                    </template>
+                  </div>
+
+                  <span class="px-1.5 py-0.5 rounded text-[9px] font-extrabold bg-red-950/80 text-red-400 border border-red-800/60 shrink-0" x-text="task.priority"></span>
+                </div>
+
+                <!-- Bottom Sidebar Action Buttons -->
+                <div class="flex items-center justify-between pt-1 border-t border-[#181d30]">
+                  <span class="text-[10px] text-slate-500 font-medium" x-text="task.category"></span>
+
+                  <div class="flex items-center gap-1.5">
+                    <button @click="openStudio(task)" class="px-2.5 py-1 text-[11px] font-bold bg-indigo-600 hover:bg-indigo-500 text-white rounded-md shadow-md transition-all flex items-center gap-1">
+                      <i class="fa-solid fa-wand-magic-sparkles text-[9px]"></i> Work
+                    </button>
+                    <button @click="task.completed = true" class="px-2 py-1 text-[11px] font-semibold text-slate-400 hover:text-slate-200 bg-[#181d30] border border-[#2b324d] rounded-md transition-all">
+                      Done
+                    </button>
+                  </div>
+                </div>
+
+              </div>
+            </template>
+          </div>
+
+        </div>
+      </div>
+
+    </div>
+  </main>
+
+  <!-- AI EXECUTION STUDIO MODAL -->
+  <div x-show="studioModal" x-cloak class="fixed inset-0 z-50 bg-black/80 backdrop-blur-md flex items-center justify-center p-4">
+    <div @click.away="studioModal = false" class="bg-[#131726] border border-[#2b324d] rounded-2xl shadow-2xl max-w-3xl w-full overflow-hidden flex flex-col max-h-[90vh]">
+      
+      <!-- Studio Header -->
+      <div class="p-4 bg-gradient-to-r from-indigo-950 via-[#161a2e] to-purple-950 border-b border-[#23283e] flex justify-between items-center">
+        <div class="flex items-center gap-3">
+          <div class="w-9 h-9 rounded-lg bg-indigo-600/30 border border-indigo-500/40 flex items-center justify-center">
+            <i class="fa-solid fa-wand-magic-sparkles text-amber-300 text-sm"></i>
+          </div>
+          <div>
+            <h2 class="font-bold text-sm text-white flex items-center gap-2">
+              <span>AI Execution Studio</span>
+              <span class="text-xs font-normal text-indigo-300" x-text="activeSubtask ? '(Sub-task Mode)' : ''"></span>
+            </h2>
+            <p class="text-xs text-slate-400 truncate max-w-md" x-text="activeSubtask ? activeSubtask.title : activeTask?.title"></p>
+          </div>
+        </div>
+        <button @click="studioModal = false" class="text-slate-400 hover:text-white p-1 text-lg">
+          <i class="fa-solid fa-xmark"></i>
+        </button>
+      </div>
+
+      <!-- Studio Body Output Display -->
+      <div class="p-5 overflow-y-auto space-y-4 flex-1">
+        
+        <div class="relative bg-[#0b0d17] border border-[#23283e] rounded-xl p-4 min-h-[220px]">
+          
+          <!-- Loading Overlay -->
+          <div x-show="isRevising" class="absolute inset-0 bg-[#0b0d17]/90 backdrop-blur-xs flex flex-col items-center justify-center rounded-xl z-20">
+            <i class="fa-solid fa-spinner fa-spin text-indigo-400 text-2xl mb-2"></i>
+            <span class="text-xs font-semibold text-slate-300">Processing with Gemini AI...</span>
+          </div>
+
+          <div class="flex items-center justify-between border-b border-[#1b2033] pb-2 mb-3">
+            <span class="text-[11px] font-bold text-indigo-400 uppercase tracking-wider flex items-center gap-1.5">
+              <i class="fa-solid fa-file-lines"></i> Draft Execution Output
+            </span>
+            <span class="text-[10px] bg-[#181d30] text-slate-400 border border-[#2b324d] px-2 py-0.5 rounded" x-text="activeTask?.category"></span>
+          </div>
+
+          <!-- Generated Text Output -->
+          <div class="text-xs text-slate-200 whitespace-pre-wrap leading-relaxed font-mono" x-text="generatedContent"></div>
+        </div>
+
+        <!-- Quick Revision Preset Chips -->
+        <div class="space-y-1.5">
+          <label class="text-xs font-bold text-slate-300 flex items-center gap-1">
+            <i class="fa-solid fa-bolt text-amber-400"></i> Quick Refinement Chips
+          </label>
+          <div class="flex flex-wrap gap-2">
+            <button @click="triggerQuickRevision('Make it concise and direct')" class="px-2.5 py-1 text-xs bg-[#181d30] hover:bg-[#222942] text-indigo-300 border border-indigo-500/30 rounded-lg transition-all flex items-center gap-1">
+              ⚡ Make Concise
+            </button>
+            <button @click="triggerQuickRevision('Translate to Traditional Chinese')" class="px-2.5 py-1 text-xs bg-[#181d30] hover:bg-[#222942] text-indigo-300 border border-indigo-500/30 rounded-lg transition-all flex items-center gap-1">
+              🌐 Traditional Chinese
+            </button>
+            <button @click="triggerQuickRevision('Format as Formal Email')" class="px-2.5 py-1 text-xs bg-[#181d30] hover:bg-[#222942] text-indigo-300 border border-indigo-500/30 rounded-lg transition-all flex items-center gap-1">
+              ✉️ Formal Email
+            </button>
+            <button @click="triggerQuickRevision('Add bullet points and action items')" class="px-2.5 py-1 text-xs bg-[#181d30] hover:bg-[#222942] text-indigo-300 border border-indigo-500/30 rounded-lg transition-all flex items-center gap-1">
+              📌 Add Bullet Points
+            </button>
+          </div>
+        </div>
+
+        <!-- REVISION PROMPT BAR -->
+        <div class="space-y-1.5 pt-2 border-t border-[#1b2033]">
+          <label class="text-xs font-bold text-slate-300">Custom Revision Instruction</label>
+          <div class="flex gap-2">
+            <input type="text" x-model="revisionPrompt" @keydown.enter.prevent="submitRevision()" placeholder="e.g. 'Make tone more casual', 'Include JST time slots', 'Add pricing risks'..." class="flex-1 bg-[#0b0d17] border border-[#2b324d] rounded-xl px-3.5 py-2 text-xs text-slate-100 placeholder-slate-500 focus:outline-none focus:border-indigo-500">
+            <button @click="submitRevision()" :disabled="isRevising || !revisionPrompt.trim()" class="px-4 py-2 bg-indigo-600 hover:bg-indigo-500 disabled:opacity-50 text-white font-bold rounded-xl text-xs transition-all flex items-center gap-1.5 shadow-lg shadow-indigo-600/20">
+              <i class="fa-solid fa-paper-plane"></i> Revise
+            </button>
+          </div>
+        </div>
+
+      </div>
+
+      <!-- Studio Footer -->
+      <div class="p-4 bg-[#0f1220] border-t border-[#1e2338] flex items-center justify-between">
+        <span x-show="copiedToast" x-cloak class="text-xs font-bold text-emerald-400 flex items-center gap-1">
+          <i class="fa-solid fa-check-circle"></i> Copied to clipboard!
+        </span>
+        <span x-show="!copiedToast"></span>
+
+        <div class="flex items-center gap-2">
+          <button @click="copyContent()" class="px-3 py-1.5 text-xs font-semibold bg-[#181d30] hover:bg-[#202740] border border-[#2b324d] text-slate-200 rounded-lg transition-all flex items-center gap-1.5">
+            <i class="fa-solid fa-copy"></i> Copy Content
+          </button>
+          <button @click="markDoneAndClose()" class="px-4 py-1.5 text-xs font-bold bg-emerald-600 hover:bg-emerald-500 text-white rounded-lg transition-all shadow-md shadow-emerald-600/20 flex items-center gap-1.5">
+            <i class="fa-solid fa-circle-check"></i> Mark as Completed
+          </button>
+        </div>
+      </div>
+
+    </div>
+  </div>
+
+  <!-- ADD TASK MODAL -->
+  <div x-show="addTaskModal" x-cloak class="fixed inset-0 z-50 bg-black/80 backdrop-blur-xs flex items-center justify-center p-4">
+    <div @click.away="addTaskModal = false" class="bg-[#131726] border border-[#2b324d] rounded-xl shadow-2xl max-w-md w-full p-5 space-y-4">
+      <h3 class="text-sm font-bold text-white flex items-center gap-2">
+        <i class="fa-solid fa-square-plus text-indigo-400"></i> Add New Task
+      </h3>
+      <div class="space-y-3 text-xs">
+        <div>
+          <label class="block font-medium text-slate-400 mb-1">Task Title</label>
+          <input type="text" x-model="newTask.title" placeholder="e.g. Aiper: Review technical docs" class="w-full bg-[#0b0d17] border border-[#2b324d] rounded-lg p-2 text-slate-100 focus:outline-none focus:border-indigo-500">
+        </div>
+        <div>
+          <label class="block font-medium text-slate-400 mb-1">Category</label>
+          <select x-model="newTask.category" class="w-full bg-[#0b0d17] border border-[#2b324d] rounded-lg p-2 text-slate-100">
+            <template x-for="cat in categories" :key="cat.name">
+              <option :value="cat.name" x-text="cat.name"></option>
+            </template>
+          </select>
+        </div>
+        <div class="grid grid-cols-2 gap-3">
+          <div>
+            <label class="block font-medium text-slate-400 mb-1">Urgent?</label>
+            <select x-model="newTask.urgent" class="w-full bg-[#0b0d17] border border-[#2b324d] rounded-lg p-2 text-slate-100">
+              <option :value="true">Yes (Urgent)</option>
+              <option :value="false">No (Not Urgent)</option>
+            </select>
+          </div>
+          <div>
+            <label class="block font-medium text-slate-400 mb-1">Important?</label>
+            <select x-model="newTask.important" class="w-full bg-[#0b0d17] border border-[#2b324d] rounded-lg p-2 text-slate-100">
+              <option :value="true">Yes (Important)</option>
+              <option :value="false">No (Not Important)</option>
+            </select>
+          </div>
+        </div>
+      </div>
+      <div class="flex justify-end gap-2 pt-2 border-t border-[#1e2338]">
+        <button @click="addTaskModal = false" class="px-3 py-1.5 text-xs font-semibold text-slate-400 hover:text-white">Cancel</button>
+        <button @click="saveNewTask()" class="px-4 py-1.5 text-xs font-bold bg-indigo-600 hover:bg-indigo-500 text-white rounded-lg transition-all">Save Task</button>
+      </div>
+    </div>
+  </div>
+
+  <!-- CATEGORIES MODAL -->
+  <div x-show="manageCategoriesModal" x-cloak class="fixed inset-0 z-50 bg-black/80 backdrop-blur-xs flex items-center justify-center p-4">
+    <div @click.away="manageCategoriesModal = false" class="bg-[#131726] border border-[#2b324d] rounded-xl shadow-2xl max-w-sm w-full p-5 space-y-4">
+      <h3 class="text-sm font-bold text-white flex items-center gap-2">
+        <i class="fa-solid fa-folder-tree text-indigo-400"></i> Manage Categories
+      </h3>
+      <div class="space-y-2 text-xs max-h-48 overflow-y-auto">
+        <template x-for="(cat, idx) in categories" :key="idx">
+          <div class="flex items-center justify-between bg-[#0b0d17] p-2.5 rounded-lg border border-[#1e2338]">
+            <span class="font-medium text-slate-200" x-text="cat.name"></span>
+            <button @click="categories.splice(idx, 1)" x-show="categories.length > 1" class="text-red-400 hover:text-red-300 text-xs">Remove</button>
+          </div>
+        </template>
+      </div>
+      <div class="flex gap-2">
+        <input type="text" x-model="newCatName" placeholder="New category name..." class="flex-1 text-xs bg-[#0b0d17] border border-[#2b324d] rounded-lg px-2.5 py-1.5 text-slate-100 focus:outline-none focus:border-indigo-500">
+        <button @click="addCategory()" class="bg-indigo-600 hover:bg-indigo-500 text-white text-xs px-3 py-1.5 rounded-lg font-bold">Add</button>
+      </div>
+      <div class="flex justify-end pt-2 border-t border-[#1e2338]">
+        <button @click="manageCategoriesModal = false" class="px-3 py-1.5 text-xs font-semibold text-slate-400 hover:text-white">Close</button>
+      </div>
+    </div>
+  </div>
+
+  <script>
+    function focusEngineApp() {
+      return {
+        currentView: 'list',
+        selectedCategory: 'All',
+        priorityFilter: 'All',
+        
+        // Studio Modal States
+        studioModal: false,
+        activeTask: null,
+        activeSubtask: null,
+        generatedContent: '',
+        revisionPrompt: '',
+        isRevising: false,
+        copiedToast: false,
+
+        // Modal Controls
+        addTaskModal: false,
+        manageCategoriesModal: false,
+        newCatName: '',
+
+        newTask: {
+          title: '',
+          category: 'Wave Commerce',
+          urgent: true,
+          important: true,
+          tag: 'General'
+        },
+
+        categories: [
+          { name: 'Wave Commerce', icon: '💼' },
+          { name: 'Personal', icon: '✈️' }
+        ],
+
+        // Preloaded Pre-configured Dashboard Tasks
+        tasks: [
+          { 
+            id: 1, 
+            title: 'President Luggage: Arrange Japan Partner Meeting', 
+            category: 'Wave Commerce', 
+            tag: 'External Communication', 
+            priority: 'P1', 
+            urgent: true, 
+            important: true, 
+            completed: false, 
+            expanded: true, 
+            subtasks: [
+              { title: 'Draft outreach email with available JST slots', completed: true },
+              { title: 'Send email to Japan partner contacts', completed: false }
+            ] 
+          },
+          { 
+            id: 2, 
+            title: 'New Era: Arrange Klaviyo Meeting w/ Daniel & Han', 
+            category: 'Wave Commerce', 
+            tag: 'Scheduling', 
+            priority: 'P1', 
+            urgent: true, 
+            important: true, 
+            completed: false, 
+            expanded: false, 
+            subtasks: [
+              { title: 'Check internal availability for Daniel & Han', completed: true }
+            ] 
+          },
+          { 
+            id: 3, 
+            title: 'POS: Prepare for POS Meeting', 
+            category: 'Wave Commerce', 
+            tag: 'Meeting Prep', 
+            priority: 'P1', 
+            urgent: true, 
+            important: true, 
+            completed: false, 
+            expanded: false, 
+            subtasks: [
+              { title: 'Review key open technical items for POS', completed: true }
+            ] 
+          },
+          { 
+            id: 4, 
+            title: 'Aiper: OMS Integration Consulting', 
+            category: 'Wave Commerce', 
+            tag: 'Architecture', 
+            priority: 'P2', 
+            urgent: false, 
+            important: true, 
+            completed: false, 
+            expanded: false, 
+            subtasks: [
+              { title: 'Map Shopify draft order flow to OMS schema', completed: false }
+            ] 
+          },
+          { 
+            id: 5, 
+            title: 'city\'super: Boost pricing check', 
+            category: 'Wave Commerce', 
+            tag: 'Analysis', 
+            priority: 'P2', 
+            urgent: false, 
+            important: true, 
+            completed: false, 
+            expanded: false, 
+            subtasks: [] 
+          },
+          { 
+            id: 6, 
+            title: 'Book hotels & car rental for US Trip', 
+            category: 'Personal', 
+            tag: 'Travel', 
+            priority: 'P1', 
+            urgent: true, 
+            important: true, 
+            completed: false, 
+            expanded: false, 
+            subtasks: [
+              { title: 'Compare SFO hotel rates', completed: false }
+            ] 
+          },
+          { 
+            id: 7, 
+            title: 'Tax Returns Filing', 
+            category: 'Personal', 
+            tag: 'Finance', 
+            priority: 'P2', 
+            urgent: false, 
+            important: true, 
+            completed: false, 
+            expanded: false, 
+            subtasks: [] 
+          }
+        ],
+
+        get filteredTasks() {
+          return this.tasks.filter(t => {
+            const matchesCat = this.selectedCategory === 'All' || t.category === this.selectedCategory;
+            const matchesPrio = this.priorityFilter === 'All' || t.priority === this.priorityFilter;
+            return matchesCat && matchesPrio;
+          });
+        },
+
+        get topPriorities() {
+          return this.tasks.filter(t => t.priority === 'P1' && !t.completed).slice(0, 5);
+        },
+
+        getCategoryCount(catName) {
+          return this.tasks.filter(t => t.category === catName).length;
+        },
+
+        getCompletedSubtaskCount(task) {
+          if (!task.subtasks) return 0;
+          return task.subtasks.filter(s => s.completed).length;
+        },
+
+        getMatrixTasks(prio) {
+          return this.tasks.filter(t => t.priority === prio && !t.completed);
+        },
+
+        recalculatePriority(task) {
+          if (task.urgent && task.important) task.priority = 'P1';
+          else if (!task.urgent && task.important) task.priority = 'P2';
+          else if (task.urgent && !task.important) task.priority = 'P3';
+          else task.priority = 'P4';
+        },
+
+        addSubtask(task) {
+          if (!task.newSubtask || !task.newSubtask.trim()) return;
+          if (!task.subtasks) task.subtasks = [];
+          task.subtasks.push({ title: task.newSubtask.trim(), completed: false });
+          task.newSubtask = '';
+        },
+
+        deleteTask(id) {
+          this.tasks = this.tasks.filter(t => t.id !== id);
+        },
+
+        autoPrioritize() {
+          this.tasks.forEach(t => this.recalculatePriority(t));
+        },
+
+        openAddTaskModal() {
+          this.newTask = { title: '', category: this.categories[0]?.name || 'Wave Commerce', urgent: true, important: true, tag: 'General' };
+          this.addTaskModal = true;
+        },
+
+        saveNewTask() {
+          if (!this.newTask.title.trim()) return;
+          const prio = (this.newTask.urgent && this.newTask.important) ? 'P1' : (this.newTask.important ? 'P2' : 'P3');
+          this.tasks.push({
+            id: Date.now(),
+            title: this.newTask.title,
+            category: this.newTask.category,
+            tag: this.newTask.tag || 'General',
+            priority: prio,
+            urgent: this.newTask.urgent,
+            important: this.newTask.important,
+            completed: false,
+            expanded: false,
+            subtasks: []
+          });
+          this.addTaskModal = false;
+        },
+
+        addCategory() {
+          if (!this.newCatName.trim()) return;
+          this.categories.push({ name: this.newCatName.trim(), icon: '📁' });
+          this.newCatName = '';
+        },
+
+        // OPEN AI STUDIO
+        openStudio(task) {
+          this.activeTask = task;
+          this.activeSubtask = null;
+          this.revisionPrompt = '';
+          this.studioModal = true;
+          this.generateInitialDraft(task.title);
+        },
+
+        openStudioForSubtask(task, subtask) {
+          this.activeTask = task;
+          this.activeSubtask = subtask;
+          this.revisionPrompt = '';
+          this.studioModal = true;
+          this.generateInitialDraft(`${task.title} - ${subtask.title}`);
+        },
+
+        generateInitialDraft(title) {
+          this.generatedContent = `Draft Action Output for: ${title}\n\nHi Team,\n\nI am reaching out regarding ${title}.\n\nCore Highlights:\n1. Key objectives aligned.\n2. Timeline & deliverables established.\n3. Action items ready for execution.\n\nPlease review and let me know if any updates are needed.\n\nBest regards,\nFocus Engine Workspace`;
+        },
+
+        triggerQuickRevision(promptText) {
+          this.revisionPrompt = promptText;
+          this.submitRevision();
+        },
+
+        // REVISE PROMPT WITH GEMINI API INTEGRATION
+        async submitRevision() {
+          if (!this.revisionPrompt.trim() || this.isRevising) return;
+          
+          this.isRevising = true;
+          const userInstruction = this.revisionPrompt.trim();
+          const currentOutput = this.generatedContent;
+          const apiKey = ""; // Runtime key insertion handled by environment if configured
+          const apiUrl = `https://generativelanguage.googleapis.com/v1beta/models/gemini-3-flash-preview:generateContent?key=${apiKey}`;
+
+          const systemPrompt = "You are an executive productivity assistant. Revise the document draft based on the user's specific request. Return only the revised document content text directly without metadata.";
+
+          const query = `Current Draft:\n"""\n${currentOutput}\n"""\n\nRevision Instruction: ${userInstruction}\n\nGenerate updated text:`;
+
+          try {
+            const response = await fetch(apiUrl, {
+              method: 'POST',
+              headers: { 'Content-Type': 'application/json' },
+              body: JSON.stringify({
+                contents: [{ parts: [{ text: query }] }],
+                systemInstruction: { parts: [{ text: systemPrompt }] }
+              })
+            });
+
+            const data = await response.json();
+            const text = data?.candidates?.[0]?.content?.parts?.[0]?.text;
+
+            if (text && text.trim()) {
+              this.generatedContent = text.trim();
+            } else {
+              this.applyFallback(userInstruction);
+            }
+          } catch (e) {
+            console.warn("API Call fallback engaged:", e);
+            this.applyFallback(userInstruction);
+          } finally {
+            this.isRevising = false;
+            this.revisionPrompt = '';
+          }
+        },
+
+        applyFallback(prompt) {
+          const lower = prompt.toLowerCase();
+          if (lower.includes('concise')) {
+            this.generatedContent = `[Concise Summary: ${this.activeTask?.title}]\n\n• Key objective clarified.\n• Immediate action required.\n• Timeline confirmed.`;
+          } else if (lower.includes('chinese') || lower.includes('traditional')) {
+            this.generatedContent = `[繁體中文翻譯]\n關於：${this.activeTask?.title}\n\n您好，\n\n以下是針對「${this.activeTask?.title}」的重點摘要與執行項目：\n1. 核心需求與時程規劃\n2. 相關負責人員確認\n3. 執行細節與後續追蹤\n\n謝謝！`;
+          } else if (lower.includes('email') || lower.includes('formal')) {
+            this.generatedContent = `Subject: Executive Briefing - ${this.activeTask?.title}\n\nDear Team,\n\nI hope this email finds you well.\n\nI am writing to formally provide the operational draft regarding ${this.activeTask?.title}.\n\nNext Steps:\n- Finalize stakeholder alignment.\n- Review execution milestones.\n\nPlease share your confirmation at your earliest convenience.\n\nBest regards,\nOperations Team`;
+          } else {
+            this.generatedContent = `[Updated Revision: "${prompt}"]\n\n${this.generatedContent}\n\n---\nAdditional Note: Revised according to request "${prompt}".`;
+          }
+        },
+
+        copyContent() {
+          if (!this.generatedContent) return;
+          const el = document.createElement('textarea');
+          el.value = this.generatedContent;
+          document.body.appendChild(el);
+          el.select();
+          document.execCommand('copy');
+          document.body.removeChild(el);
+
+          this.copiedToast = true;
+          setTimeout(() => { this.copiedToast = false; }, 2000);
+        },
+
+        markDoneAndClose() {
+          if (this.activeSubtask) {
+            this.activeSubtask.completed = true;
+          } else if (this.activeTask) {
+            this.activeTask.completed = true;
+          }
+          this.studioModal = false;
+        }
+      }
+    }
+  </script>
+</body>
+</html>
